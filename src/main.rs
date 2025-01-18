@@ -6,16 +6,12 @@ use mio::{Events, Interest, Poll, Token};
 use tokio::io::Result;
 
 const BUFFER_SIZE: usize = 2048;
-const KIND_SERVER: u32 = 0;
-const KIND_CLIENT: u32 = 0;
 
 struct SocketKind {
-    kind: u32,
     token: usize,
     target_addr: SocketAddr,
     src: Arc<UdpSocket>,
-    target: Option<Arc<UdpSocket>>, // For client only
-    targets: HashMap<SocketAddr, Arc<UdpSocket>>, // For server only
+    targets: HashMap<SocketAddr, Arc<UdpSocket>>,
 }
 
 fn main() -> Result<()> {
@@ -42,10 +38,8 @@ fn main() -> Result<()> {
         poll.registry().register(&mut socket, Token(token), Interest::READABLE)?;
         
         let m = SocketKind {
-            kind: KIND_SERVER,
             token,
             src: Arc::new(socket),
-            target: None,
             target_addr,
             targets: HashMap::new(),
         };
@@ -97,14 +91,11 @@ fn main() -> Result<()> {
                                 poll.registry().register(&mut client_socket, Token(token), Interest::READABLE)?;
 
                                 let client_arc = Arc::new(client_socket);
-                                sock.target = Some(Arc::clone(&client_arc));
                                 sock.targets.insert(client_addr, Arc::clone(&client_arc));
 
                                 let mut m = SocketKind {
-                                    kind: KIND_CLIENT,
                                     token,
                                     src: Arc::clone(&client_arc),
-                                    target: Some(Arc::clone(&sock.src)),
                                     target_addr: client_addr,
                                     targets: HashMap::new(),
                                 };
