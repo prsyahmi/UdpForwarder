@@ -1,7 +1,6 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use mio::net::UdpSocket;
 use mio::{Events, Interest, Poll, Token};
 use tokio::io::Result;
@@ -22,9 +21,9 @@ fn main() -> Result<()> {
     let mut poll = Poll::new()?;
     let mut events = Events::with_capacity(256);
 
-    let mut clients: HashMap<String, UdpSocket> = HashMap::new();
-    let mut token_to_clients: HashMap<usize, String> = HashMap::new();
-    let mut token_to_socket: RefCell<HashMap<usize, SocketKind>> = RefCell::new(HashMap::new());
+    //let mut clients: HashMap<String, UdpSocket> = HashMap::new();
+    //let mut token_to_clients: HashMap<usize, String> = HashMap::new();
+    let token_to_socket: Arc<Mutex<HashMap<usize, SocketKind>>> = Arc::new(Mutex::new(HashMap::new()));
 
     let mut buf = vec![0u8; BUFFER_SIZE];
     let mut next_token: usize = 0;
@@ -47,13 +46,12 @@ fn main() -> Result<()> {
             kind: KIND_SERVER,
             target_addr,
         };
-        token_to_socket.borrow_mut().insert(token, m);
+        token_to_socket.lock().unwrap().insert(token, m);
 
         Ok(())
     };
 
     add_server("127.0.0.1:27088", "10.11.12.1:27015").expect("Unable to add");
-
 
     loop {
         poll.poll(&mut events, None)?;
@@ -65,7 +63,7 @@ fn main() -> Result<()> {
                         continue;
                     }
 
-                    let mut token_sock = token_to_socket.borrow_mut();
+                    let mut token_sock = token_to_socket.lock().unwrap();
                     let sock = match token_sock.get_mut(&token_id) {
                         Some(v) => v,
                         None => continue,
@@ -73,6 +71,8 @@ fn main() -> Result<()> {
 
                     //if sock.kind == KIND_SERVER {
                         while let Ok((len, client_addr)) = sock.src.recv_from(&mut buf) {
+                            println!("Got {} bytes packet from {}", len, client_addr);
+
                             let target = match &sock.target {
                                 Some(v) => Arc::clone(v),
                                 None => {
@@ -92,12 +92,13 @@ fn main() -> Result<()> {
                                         target_addr: "0.0.0.0:0".parse().unwrap(),
                                     };
 
-                                    token_sock.insert(token, m);
+                                    token_to_socket.lock().unwrap().insert(token, m);
                                     Arc::clone(&client_arc)
                                 }
                             };
 
                             // New UDP socket (client) -> Real server
+                            println!("Sending {} bytes packet to {}", len, sock.target_addr);
                             target.send_to(&buf[..len], sock.target_addr).expect("Could not send data to real server");
                         }
                     /*} else {
