@@ -48,8 +48,9 @@ fn main() -> Result<()> {
         Ok(())
     };
 
-    println!("UDPForward - created by syazaz");
-    add_server("103.179.44.152:27015", "160.191.77.150:27015").expect("Unable to add");
+    println!("UDPForward - created by Team-MMG");
+    add_server("127.0.0.1:27019", "160.191.77.150:27019").expect("Unable to add");
+    /*add_server("103.179.44.152:27015", "160.191.77.150:27015").expect("Unable to add");
     add_server("103.179.44.152:27016", "160.191.77.150:27016").expect("Unable to add");
     add_server("103.179.44.152:27017", "160.191.77.150:27017").expect("Unable to add");
     add_server("103.179.44.152:27018", "160.191.77.150:27018").expect("Unable to add");
@@ -59,7 +60,7 @@ fn main() -> Result<()> {
     add_server("10.11.12.1:27016", "160.191.77.150:27016").expect("Unable to add");
     add_server("10.11.12.1:27017", "160.191.77.150:27017").expect("Unable to add");
     add_server("10.11.12.1:27018", "160.191.77.150:27018").expect("Unable to add");
-    add_server("10.11.12.1:27019", "160.191.77.150:27019").expect("Unable to add");
+    add_server("10.11.12.1:27019", "160.191.77.150:27019").expect("Unable to add");*/
 
     loop {
         poll.poll(&mut events, None)?;
@@ -85,7 +86,10 @@ fn main() -> Result<()> {
                         let target = match sock.targets.get(&client_addr) {
                             Some(v) => Arc::clone(v),
                             None => {
-                                let mut client_socket = UdpSocket::bind("160.191.77.150:0".parse().unwrap()).expect("Could not bind client socket");
+                                let iface_bind = SocketAddr::new(sock.target_addr.ip(), 0);
+                                let mut client_socket = UdpSocket::bind(iface_bind)
+                                    .or_else(|_| UdpSocket::bind("0.0.0.0:0".parse().unwrap()))
+                                    .expect("Could not bind client socket");
     
                                 let token = get_token();
                                 poll.registry().register(&mut client_socket, Token(token), Interest::READABLE)?;
