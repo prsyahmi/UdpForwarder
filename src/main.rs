@@ -1,9 +1,9 @@
 use std::collections::HashMap;
+use std::io::Result;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use mio::net::UdpSocket;
 use mio::{Events, Interest, Poll, Token};
-use tokio::io::Result;
 
 const BUFFER_SIZE: usize = 2048;
 
