@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
     let sock_arc2 = Arc::clone(&sock_arc);
     
     let clients: HashMap<SocketAddr, ClientMap> = HashMap::new();
-    let clients_arc = Arc::new(RwLock::new(clients));
+    let clients_arc = Arc::new(Mutex::new(clients));
     let clients_arc2 = Arc::clone(&clients_arc);
 
     let runtime = Builder::new_multi_thread()
@@ -56,7 +56,7 @@ async fn main() -> Result<()> {
             let v = rx.recv().unwrap();
             println!("Received {} bytes from client {}", v.buffer.len(), v.from_addr);
 
-            let cs = clients_arc.read().await;
+            let cs = clients_arc.lock().await;
             match cs.get(&v.from_addr) {
                 Some(m) => {
                     println!("Found existing map for {}", v.from_addr);
@@ -68,14 +68,23 @@ async fn main() -> Result<()> {
                     let m = create_client().await;
 
                     println!("Creating new map table for {}", v.from_addr);
-                    
-                    let real_addr = SocketAddr::from(([10,11,12,1], 2015));
-                    let _ = m.our_to_real.send_to(&v.buffer, real_addr).await;
 
                     {
-                        let mut cs = clients_arc.write().await;
+                        let mut cs = clients_arc.lock().await;
                         cs.insert(v.from_addr, m);
+                        let m = cs.get(&v.from_addr).unwrap();
+                    
+                        let real_addr = SocketAddr::from(([10,11,12,1], 2015));
+                        let _ = m.our_to_real.send_to(&v.buffer, real_addr).await;
                     }
+
+                    /*{
+                        let cs = clients_arc.write().await;
+                        let m = cs.get(&v.from_addr).unwrap();
+                    
+                        let real_addr = SocketAddr::from(([10,11,12,1], 2015));
+                        let _ = m.our_to_real.send_to(&v.buffer, real_addr).await;
+                    }*/
 
                     println!("Created new map table for {}", v.from_addr);
                 }
@@ -86,12 +95,13 @@ async fn main() -> Result<()> {
     runtime.spawn(async move {
         loop {
             let mut buf = vec![0u8; 2048];
-            let cs = clients_arc2.write().await;
+            let cs = clients_arc2.lock().await;
             println!("Empty? {}", cs.is_empty());
             for (k, v) in cs.iter() {
                 println!("{}", k);
                 //println!("{}", v.our_to_real.peer_addr().unwrap());
                 let res = v.our_to_real.recv_from(&mut buf).await;
+                println!("{}ddd", k);
                 match res {
                     Ok(res) => {
                         println!("Sending to {}", k);
