@@ -1,17 +1,13 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use mio::net::UdpSocket;
 use mio::{Events, Interest, Poll, Token};
 use tokio::io::Result;
 
-const SERVER: Token = Token(0);
 const BUFFER_SIZE: usize = 2048;
-const KIND_SERVER: u32 = 0;
-const KIND_CLIENT: u32 = 1;
 
 struct SocketKind {
-    kind: u32,
     token: usize,
     target_addr: SocketAddr,
     src: Arc<UdpSocket>,
@@ -33,6 +29,8 @@ fn main() -> Result<()> {
     };
 
     let mut add_server = |listen_addr: &str, target_addr: &str| -> Result<()> {
+        println!("  Listening on {} and forward to {}", listen_addr, target_addr);
+
         let token = get_token();
         let target_addr: SocketAddr = target_addr.parse().unwrap();
         let mut socket = UdpSocket::bind(listen_addr.parse().unwrap())?;
@@ -40,7 +38,6 @@ fn main() -> Result<()> {
         poll.registry().register(&mut socket, Token(token), Interest::READABLE)?;
         
         let m = SocketKind {
-            kind: KIND_SERVER,
             token,
             src: Arc::new(socket),
             target: None,
@@ -51,7 +48,12 @@ fn main() -> Result<()> {
         Ok(())
     };
 
-    add_server("127.0.0.1:27088", "10.11.12.1:27015").expect("Unable to add");
+    println!("UDPForward - created by syazaz");
+    add_server("103.179.44.152:27015", "160.191.77.150:27015").expect("Unable to add");
+    add_server("103.179.44.152:27016", "160.191.77.150:27016").expect("Unable to add");
+    add_server("103.179.44.152:27017", "160.191.77.150:27017").expect("Unable to add");
+    add_server("103.179.44.152:27018", "160.191.77.150:27018").expect("Unable to add");
+    add_server("103.179.44.152:27019", "160.191.77.150:27019").expect("Unable to add");
 
     loop {
         poll.poll(&mut events, None)?;
@@ -71,12 +73,13 @@ fn main() -> Result<()> {
                     let mut to_be_insert: Vec<SocketKind> = Vec::new();
 
                     while let Ok((len, client_addr)) = sock.src.recv_from(&mut buf) {
-                        println!("Got {} bytes packet from {}", len, client_addr);
+                        //#[cfg(debug_assertions)]
+                        //println!("Got {} bytes packet from {}", len, client_addr);
 
                         let target = match &sock.target {
                             Some(v) => Arc::clone(v),
                             None => {
-                                let mut client_socket = UdpSocket::bind("0.0.0.0:0".parse().unwrap()).expect("Could not bind client socket");
+                                let mut client_socket = UdpSocket::bind("160.191.77.150:0".parse().unwrap()).expect("Could not bind client socket");
     
                                 let token = get_token();
                                 poll.registry().register(&mut client_socket, Token(token), Interest::READABLE)?;
@@ -85,7 +88,6 @@ fn main() -> Result<()> {
                                 sock.target = Some(Arc::clone(&client_arc));
 
                                 let m = SocketKind {
-                                    kind: KIND_CLIENT,
                                     token,
                                     src: Arc::clone(&client_arc),
                                     target: Some(Arc::clone(&sock.src)),
@@ -100,7 +102,8 @@ fn main() -> Result<()> {
                         };
 
                         // New UDP socket (client) -> Real server
-                        println!("Sending {} bytes packet to {}", len, sock.target_addr);
+                        #[cfg(debug_assertions)]
+                        println!("{} -> {} || {} bytes", client_addr, sock.target_addr, len);
                         target.send_to(&buf[..len], sock.target_addr).expect("Could not send data to real server");
                     }
 
