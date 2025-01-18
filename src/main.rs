@@ -12,6 +12,7 @@ const KIND_CLIENT: u32 = 1;
 
 struct SocketKind {
     kind: u32,
+    token: usize,
     target_addr: SocketAddr,
     src: Arc<UdpSocket>,
     target: Option<Arc<UdpSocket>>,
@@ -21,9 +22,7 @@ fn main() -> Result<()> {
     let mut poll = Poll::new()?;
     let mut events = Events::with_capacity(256);
 
-    //let mut clients: HashMap<String, UdpSocket> = HashMap::new();
-    //let mut token_to_clients: HashMap<usize, String> = HashMap::new();
-    let token_to_socket: Arc<Mutex<HashMap<usize, SocketKind>>> = Arc::new(Mutex::new(HashMap::new()));
+    let mut token_to_socket: HashMap<usize, SocketKind> = HashMap::new();
 
     let mut buf = vec![0u8; BUFFER_SIZE];
     let mut next_token: usize = 0;
@@ -41,12 +40,13 @@ fn main() -> Result<()> {
         poll.registry().register(&mut socket, Token(token), Interest::READABLE)?;
         
         let m = SocketKind {
+            kind: KIND_SERVER,
+            token,
             src: Arc::new(socket),
             target: None,
-            kind: KIND_SERVER,
             target_addr,
         };
-        token_to_socket.lock().unwrap().insert(token, m);
+        token_to_socket.insert(token, m);
 
         Ok(())
     };
@@ -63,63 +63,50 @@ fn main() -> Result<()> {
                         continue;
                     }
 
-                    let mut token_sock = token_to_socket.lock().unwrap();
-                    let sock = match token_sock.get_mut(&token_id) {
+                    let sock = match token_to_socket.get_mut(&token_id) {
                         Some(v) => v,
                         None => continue,
                     };
 
-                    //if sock.kind == KIND_SERVER {
-                        while let Ok((len, client_addr)) = sock.src.recv_from(&mut buf) {
-                            println!("Got {} bytes packet from {}", len, client_addr);
+                    let mut to_be_insert: Vec<SocketKind> = Vec::new();
 
-                            let target = match &sock.target {
-                                Some(v) => Arc::clone(v),
-                                None => {
-                                    let mut client_socket = UdpSocket::bind("0.0.0.0:0".parse().unwrap()).expect("Could not bind client socket");
-        
-                                    let token = get_token();
-                                    poll.registry().register(&mut client_socket, Token(token), Interest::READABLE)?;
+                    while let Ok((len, client_addr)) = sock.src.recv_from(&mut buf) {
+                        println!("Got {} bytes packet from {}", len, client_addr);
 
-                                    let client_arc = Arc::new(client_socket);
-                                    sock.target = Some(Arc::clone(&client_arc));
+                        let target = match &sock.target {
+                            Some(v) => Arc::clone(v),
+                            None => {
+                                let mut client_socket = UdpSocket::bind("0.0.0.0:0".parse().unwrap()).expect("Could not bind client socket");
+    
+                                let token = get_token();
+                                poll.registry().register(&mut client_socket, Token(token), Interest::READABLE)?;
 
-                                    let m = SocketKind {
-                                        src: Arc::clone(&client_arc),
-                                        //target: Some(Arc::clone(&sock.src)),
-                                        target: None,
-                                        kind: KIND_CLIENT,
-                                        target_addr: "0.0.0.0:0".parse().unwrap(),
-                                    };
+                                let client_arc = Arc::new(client_socket);
+                                sock.target = Some(Arc::clone(&client_arc));
 
-                                    token_to_socket.lock().unwrap().insert(token, m);
-                                    Arc::clone(&client_arc)
-                                }
-                            };
+                                let m = SocketKind {
+                                    kind: KIND_CLIENT,
+                                    token,
+                                    src: Arc::clone(&client_arc),
+                                    target: Some(Arc::clone(&sock.src)),
+                                    target_addr: client_addr,
+                                };
 
-                            // New UDP socket (client) -> Real server
-                            println!("Sending {} bytes packet to {}", len, sock.target_addr);
-                            target.send_to(&buf[..len], sock.target_addr).expect("Could not send data to real server");
-                        }
-                    /*} else {
-                        while let Ok((len, client_addr)) = sock.src.recv_from(&mut buf) {
-                        }
+                                to_be_insert.push(m);
+
+                                //token_to_socket.insert(token, m);
+                                Arc::clone(&client_arc)
+                            }
+                        };
+
+                        // New UDP socket (client) -> Real server
+                        println!("Sending {} bytes packet to {}", len, sock.target_addr);
+                        target.send_to(&buf[..len], sock.target_addr).expect("Could not send data to real server");
                     }
 
-                    if let Some(client_addr) = token_to_clients.get(&client_id) {
-                        if let Some(client_socket) = clients.get(client_addr) {
-                            loop {
-                                let read_res = client_socket.recv_from(&mut buf);
-                                if read_res.is_err() {
-                                    break;
-                                }
-
-                                let (len, _) = read_res.unwrap();
-                                //println!("Recv {} bytes from server {} -> client {}", len, addr, client_addr);
-                                let _ = socket1.send_to(&buf[..len], client_addr.parse().unwrap());
-                            }
-                        }
-                    }*/
+                    while let Some(v) = to_be_insert.pop() {
+                        token_to_socket.insert(v.token, v);
+                    }
                 }
             }
         }
