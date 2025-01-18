@@ -6,12 +6,16 @@ use mio::{Events, Interest, Poll, Token};
 use tokio::io::Result;
 
 const BUFFER_SIZE: usize = 2048;
+const KIND_SERVER: u32 = 0;
+const KIND_CLIENT: u32 = 0;
 
 struct SocketKind {
+    kind: u32,
     token: usize,
     target_addr: SocketAddr,
     src: Arc<UdpSocket>,
-    target: Option<Arc<UdpSocket>>,
+    target: Option<Arc<UdpSocket>>, // For client only
+    targets: HashMap<SocketAddr, Arc<UdpSocket>>, // For server only
 }
 
 fn main() -> Result<()> {
@@ -38,10 +42,12 @@ fn main() -> Result<()> {
         poll.registry().register(&mut socket, Token(token), Interest::READABLE)?;
         
         let m = SocketKind {
+            kind: KIND_SERVER,
             token,
             src: Arc::new(socket),
             target: None,
             target_addr,
+            targets: HashMap::new(),
         };
         token_to_socket.insert(token, m);
 
@@ -54,6 +60,12 @@ fn main() -> Result<()> {
     add_server("103.179.44.152:27017", "160.191.77.150:27017").expect("Unable to add");
     add_server("103.179.44.152:27018", "160.191.77.150:27018").expect("Unable to add");
     add_server("103.179.44.152:27019", "160.191.77.150:27019").expect("Unable to add");
+    
+    add_server("10.11.12.1:27015", "160.191.77.150:27015").expect("Unable to add");
+    add_server("10.11.12.1:27016", "160.191.77.150:27016").expect("Unable to add");
+    add_server("10.11.12.1:27017", "160.191.77.150:27017").expect("Unable to add");
+    add_server("10.11.12.1:27018", "160.191.77.150:27018").expect("Unable to add");
+    add_server("10.11.12.1:27019", "160.191.77.150:27019").expect("Unable to add");
 
     loop {
         poll.poll(&mut events, None)?;
@@ -76,7 +88,7 @@ fn main() -> Result<()> {
                         //#[cfg(debug_assertions)]
                         //println!("Got {} bytes packet from {}", len, client_addr);
 
-                        let target = match &sock.target {
+                        let target = match sock.targets.get(&client_addr) {
                             Some(v) => Arc::clone(v),
                             None => {
                                 let mut client_socket = UdpSocket::bind("160.191.77.150:0".parse().unwrap()).expect("Could not bind client socket");
@@ -86,13 +98,17 @@ fn main() -> Result<()> {
 
                                 let client_arc = Arc::new(client_socket);
                                 sock.target = Some(Arc::clone(&client_arc));
+                                sock.targets.insert(client_addr, Arc::clone(&client_arc));
 
-                                let m = SocketKind {
+                                let mut m = SocketKind {
+                                    kind: KIND_CLIENT,
                                     token,
                                     src: Arc::clone(&client_arc),
                                     target: Some(Arc::clone(&sock.src)),
                                     target_addr: client_addr,
+                                    targets: HashMap::new(),
                                 };
+                                m.targets.insert(sock.target_addr, Arc::clone(&sock.src));
 
                                 to_be_insert.push(m);
 
