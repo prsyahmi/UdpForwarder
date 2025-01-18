@@ -4,14 +4,23 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use mio::net::UdpSocket;
 use mio::{Events, Interest, Poll, Token};
+use std::fs;
+use serde::Deserialize;
 
 const BUFFER_SIZE: usize = 2048;
 
+// TODO: There is no release, no activity timeout
 struct SocketKind {
     token: usize,
     target_addr: SocketAddr,
     src: Arc<UdpSocket>,
     targets: HashMap<SocketAddr, Arc<UdpSocket>>,
+}
+
+#[derive(Deserialize)]
+struct Config {
+    debug: Option<bool>,
+    forwards: HashMap<String, String>,
 }
 
 fn main() -> Result<()> {
@@ -48,19 +57,14 @@ fn main() -> Result<()> {
         Ok(())
     };
 
+    let config = fs::read_to_string("config.toml").expect("Unable to open config.toml");
+    let config: Config = toml::from_str(&config).expect("Unable to read config.toml");
+    let debug = config.debug.unwrap_or_else(|| false);
+
     println!("UDPForward - created by Team-MMG");
-    add_server("127.0.0.1:27019", "160.191.77.150:27019").expect("Unable to add");
-    /*add_server("103.179.44.152:27015", "160.191.77.150:27015").expect("Unable to add");
-    add_server("103.179.44.152:27016", "160.191.77.150:27016").expect("Unable to add");
-    add_server("103.179.44.152:27017", "160.191.77.150:27017").expect("Unable to add");
-    add_server("103.179.44.152:27018", "160.191.77.150:27018").expect("Unable to add");
-    add_server("103.179.44.152:27019", "160.191.77.150:27019").expect("Unable to add");
-    
-    add_server("10.11.12.1:27015", "160.191.77.150:27015").expect("Unable to add");
-    add_server("10.11.12.1:27016", "160.191.77.150:27016").expect("Unable to add");
-    add_server("10.11.12.1:27017", "160.191.77.150:27017").expect("Unable to add");
-    add_server("10.11.12.1:27018", "160.191.77.150:27018").expect("Unable to add");
-    add_server("10.11.12.1:27019", "160.191.77.150:27019").expect("Unable to add");*/
+    for (k, v) in config.forwards {
+        add_server(&k, &v).expect("Unable to add");
+    }
 
     loop {
         poll.poll(&mut events, None)?;
@@ -113,8 +117,9 @@ fn main() -> Result<()> {
                         };
 
                         // New UDP socket (client) -> Real server
-                        #[cfg(debug_assertions)]
-                        println!("{} -> {} || {} bytes", client_addr, sock.target_addr, len);
+                        if debug {
+                            println!("{} -> {} || {} bytes", client_addr, sock.target_addr, len);
+                        }
                         target.send_to(&buf[..len], sock.target_addr).expect("Could not send data to real server");
                     }
 
